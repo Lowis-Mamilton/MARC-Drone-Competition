@@ -1,0 +1,15 @@
+{
+  "name": "marc-drone-simulator",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "node --test tests/*.test.mjs",
+    "build:scratch": "node scripts/build-scratch.mjs",
+    "examples": "node scripts/build-examples.mjs",
+    "test:integration": "node scripts/integration-test.mjs",
+    "studio:build": "node scripts/build-studio.mjs",
+    "start": "node scripts/start-studio.mjs",
+    "test:controller": "node scripts/run-godot.mjs --headless --script res://tests/godot/controller_test.gd"
+  }
+}

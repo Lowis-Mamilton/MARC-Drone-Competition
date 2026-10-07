@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <meta name="theme-color" content="#0b1219">
+  <title>MARC 手機遙控器</title>
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <main id="app">
+    <header>
+      <div class="brand"><span class="brand-mark" aria-hidden="true">M</span><div class="brand-copy"><span class="eyebrow">MARC 無人機模擬器</span><strong>手機虛擬搖桿</strong></div></div>
+      <div class="header-tools"><div id="connection" class="status disconnected" role="status"><i aria-hidden="true"></i><span>正在連線</span></div><button id="fullscreenButton" class="quiet" aria-label="切換全螢幕">全螢幕</button></div>
+    </header>
+    <section id="rotateNotice"><div class="rotate-icon" aria-hidden="true">↻</div><strong>請將手機橫放</strong><p>橫放手機即可使用雙搖桿；電腦請保持模擬器開啟。</p><p id="portraitMessage" role="status">連接同一個 Wi-Fi，掃描模擬器中的 QR Code。</p></section>
+    <section id="controls" aria-label="飛行控制">
+      <div class="stick-zone" id="leftZone" aria-label="升降與轉向搖桿">
+        <div class="axis-label top">升降</div><div class="axis-label side">轉向</div>
+        <div class="stick-base"><div class="stick" id="leftStick"></div></div>
+      </div>
+      <div class="center-controls">
+        <div class="telemetry"><span id="modeReadout">定位懸停</span><small id="latency">— ms</small></div>
+        <button id="armButton" class="arm" disabled>起飛</button>
+        <button id="modeButton" disabled>切換模式</button>
+        <div class="button-row"><button id="turtleButton" disabled title="翻正飛機">翻正</button><button id="resetButton" class="danger" disabled>重置</button></div>
+        <div class="throttle-info"><span>升降</span><meter id="throttleMeter" min="0" max="100" value="0" aria-label="升降搖桿百分比"></meter><output id="throttleValue">0%</output></div>
+        <small id="message" role="status" aria-live="polite">等待模擬器連線…</small>
+      </div>
+      <div class="stick-zone" id="rightZone" aria-label="前後與左右搖桿">
+        <div class="axis-label top">前後</div><div class="axis-label side">左右</div>
+        <div class="stick-base"><div class="stick" id="rightStick"></div></div>
+      </div>
+    </section>
+    <footer><span id="flightState">已降落</span><span id="altitude">高度 — 公分</span><span id="stickMode">Mode 2 · 升降置中為懸停</span></footer>
+  </main>
+  <script src="/app.js"></script>
+</body>
+</html>

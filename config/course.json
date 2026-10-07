@@ -1,0 +1,25 @@
+{
+  "schema_version": 1,
+  "width_cm": 400, "depth_cm": 320, "ceiling_cm": 240, "cell_cm": 40,
+  "drone_radius_cm": 10, "line_width_cm": 1,
+  "pad": {"x":40,"y":160,"outer_diameter":80,"inner_diameter":40},
+  "rings": [
+    {"id":"1A","x":60,"y":280,"h":150,"diameter":60,"axis":"h","direction":-1,"color":"2288ff"},
+    {"id":"1B","x":140,"y":280,"h":60,"diameter":70,"axis":"h","direction":1,"color":"ffc400"},
+    {"id":"4A","x":300,"y":40,"h":70,"diameter":70,"axis":"x","direction":-1,"color":"ffc400"},
+    {"id":"4B","x":220,"y":40,"h":70,"diameter":70,"axis":"x","direction":-1,"color":"ffc400"},
+    {"id":"4C","x":140,"y":40,"h":70,"diameter":70,"axis":"x","direction":-1,"color":"ffc400"},
+    {"id":"6","x":140,"y":200,"h":100,"diameter":60,"axis":"x","direction":1,"color":"2288ff"}
+  ],
+  "pole":{"id":"2","x":260,"y":280,"h":150,"diameter":3},
+  "bridge":{"id":"3","x":360,"y":160,"h":100,"length":80,"diameter":3},
+  "report_card":{"id":"5","x":340,"y":260,"size":40},
+  "cards":[
+    {"id":"7-1","x":220,"y":220,"size":40},
+    {"id":"7-2","x":300,"y":220,"size":40},
+    {"id":"7-3","x":260,"y":180,"size":40},
+    {"id":"7-4","x":140,"y":140,"size":40},
+    {"id":"7-5","x":220,"y":140,"size":40},
+    {"id":"7-6","x":300,"y":140,"size":40}
+  ]
+}

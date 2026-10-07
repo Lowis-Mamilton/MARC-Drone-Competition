@@ -1,0 +1,7 @@
+.godot/
+node_modules/
+scratch/node_modules/
+dist/
+.runtime/
+*.tmp
+*.log

@@ -1,0 +1,10 @@
+import React from 'react';
+import * as ReactDOM from 'react-dom';
+import * as ReactDOMClient from 'react-dom/client';
+import * as ReactRedux from 'react-redux';
+import * as Redux from 'redux';
+window.react = React;
+window['react-dom'] = {...ReactDOM};
+window['react-redux'] = {...ReactRedux};
+window.redux = {...Redux};
+window.MARCRoot = ReactDOMClient;
