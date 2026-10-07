@@ -2,7 +2,7 @@ import {mkdir,copyFile,writeFile,access} from 'node:fs/promises';
 import {spawn} from 'node:child_process';
 import path from 'node:path';
 const root=path.resolve(import.meta.dirname,'..');
-const output=path.join(root,'.runtime/studio');
+const output=process.env.STUDIO_OUTPUT_DIR ? path.resolve(process.env.STUDIO_OUTPUT_DIR) : path.join(root,'.runtime/studio');
 const sdk=process.env.WEBVIEW2_SDK_DIR || 'C:/Program Files/Microsoft Visual Studio/2022/Community/Common7/IDE/PrivateAssemblies';
 const framework='C:/Windows/Microsoft.NET/Framework64/v4.0.30319';
 await mkdir(output,{recursive:true});

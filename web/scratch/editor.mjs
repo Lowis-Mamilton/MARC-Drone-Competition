@@ -7,6 +7,26 @@ let halted = false;
 let stopSuppressed = false;
 let runGeneration = 0;
 let starterLoaded = false;
+let projectLoading = true;
+let projectDirty = false;
+let currentExample = '';
+let lastHostState = '';
+let vmRunning = false;
+const exampleSelect = document.querySelector('#example');
+const hint = document.querySelector('#example-hint');
+const publishState = () => {
+    const state = {type:'state', connected:connection.connected, running:vmRunning};
+    const key = JSON.stringify(state);
+    if (key !== lastHostState) {lastHostState=key; notifyHost(state);}
+};
+const markClean = () => {projectDirty=false;notifyHost({type:'loaded'});};
+const markChanged = () => {
+    if(projectLoading || projectDirty) return;
+    projectDirty=true;
+    currentExample=''; exampleSelect.value='';
+    hint.textContent='自訂程式 · 拖曳積木編排飛行動作，按「執行」試飛。記得儲存你的修改。';
+    notifyHost({type:'dirty'});
+};
 let connectionReady;
 const EXAMPLES = {
     takeoff:'起飛到 50 公分 → 懸停 2 秒 → 降落。按上方「執行」試飛。',
@@ -23,19 +43,26 @@ const showError = error => {
     if (vm && !halted) {halted = true; vm.stopAll(); halted = false;}
 };
 const connection = new MARCConnection(state => {
-    status.textContent = state.error || `已連線 · x ${Number(state.x||0).toFixed(0)} / y ${Number(state.y||0).toFixed(0)} / 高 ${Number(state.h||0).toFixed(0)} cm · ${state.color||'none'} · 剩餘 ${Number(state.remaining||0).toFixed(1)} 秒`;
+    status.textContent = state.error || (vmRunning ? '● 程式執行中' : '● 模擬器已連線');
+    status.classList.toggle('offline', Boolean(state.error));
+    document.querySelector('#reconnect').hidden = !state.error;
+    publishState();
 });
 window.marcConnection = connection;
 const connect = () => {
-    connectionReady=connection.connect().then(()=>{errorBox.style.display='none';}).catch(showError);
+    connectionReady=connection.connect().then(()=>{errorBox.style.display='none';publishState();}).catch(showError);
     return connectionReady;
 };
 const setupVM = nextVM => {
     vm = nextVM;
     window.marcVM = vm;
-    vm.runtime.on('PROJECT_CHANGED',()=>notifyHost({type:'dirty'}));
+    vm.runtime.on('PROJECT_CHANGED',markChanged);
+    vm.runtime.on('PROJECT_RUN_START',()=>{vmRunning=true;publishState();});
+    vm.runtime.on('PROJECT_RUN_STOP',()=>{
+        vmRunning=false;publishState();
+        if(!stopSuppressed && connection.connected) connection.stop().catch(()=>{});
+    });
     vm.runtime.on('PROJECT_LOADED',()=>{
-        notifyHost({type:'loaded'});
         if(!starterLoaded) {starterLoaded=true;queueMicrotask(()=>loadPreset('takeoff').catch(showError));}
     });
     const extension = new MARCExtension(connection,showError);
@@ -62,6 +89,7 @@ const setupVM = nextVM => {
     });
 };
 const loadPreset = async name => {
+    ++runGeneration;
     await connectionReady;
     if(!connection.connected) throw new Error('模擬器尚未連線，請按重新連線後再載入範例');
     stopSuppressed=true;
@@ -70,16 +98,22 @@ const loadPreset = async name => {
     await connection.stop().catch(()=>{});
     const response = await fetch(`/examples/${name}.sb3`);
     if(!response.ok) throw new Error('找不到範例專案');
-    await vm.loadProject(await response.arrayBuffer());
-    document.querySelector('#example').value=name;
-    document.querySelector('#example-hint').textContent=EXAMPLES[name];
+    projectLoading=true;
+    try {await vm.loadProject(await response.arrayBuffer());}
+    finally {projectLoading=false;}
+    currentExample=name; exampleSelect.value=name;
+    hint.textContent=EXAMPLES[name];
+    markClean();
     document.documentElement.classList.remove('drone-loading');
     window.marcReady=true;
 };
 const loadExample = async name => {
     if(!name || !vm) return;
-    if(!confirm('載入範例將取代目前程式，請先按上方「儲存 .sb3」保留修改。')) return;
-    await loadPreset(name);
+    if(projectDirty && !confirm('載入範例將取代尚未儲存的修改。請先按上方「儲存」保留程式。是否繼續？')) {exampleSelect.value=currentExample;return;}
+    exampleSelect.disabled=true;
+    try {await loadPreset(name);}
+    catch(error) {exampleSelect.value=currentExample;throw error;}
+    finally {exampleSelect.disabled=false;}
 };
 document.querySelector('#reconnect').onclick=connect;
 document.querySelector('#run').onclick=()=>vm?.greenFlag();
@@ -90,12 +124,24 @@ document.querySelector('#example').onchange=event=>loadExample(event.target.valu
 const embedded = new URLSearchParams(location.search).get('embedded') === '1';
 if (embedded) document.documentElement.classList.add('embedded');
 const notifyHost = message => window.chrome?.webview?.postMessage(message);
+if(embedded) document.addEventListener('keydown',event=>{
+    if(event.altKey || event.metaKey || event.repeat) return;
+    let action;
+    if(event.key==='F5' && !event.ctrlKey) action=event.shiftKey?'stop':'run';
+    if(event.ctrlKey && !event.shiftKey) action={s:'save',o:'open',r:'reset'}[event.key.toLowerCase()];
+    if(!action) return;
+    event.preventDefault();event.stopImmediatePropagation();
+    notifyHost({type:'shortcut',action});
+},true);
 const toBase64 = bytes => {
     let text = '';
     for(let offset=0;offset<bytes.length;offset+=32768) text+=String.fromCharCode(...bytes.subarray(offset,offset+32768));
     return btoa(text);
 };
 window.marcStudio = {
+    run() {if(!vmRunning) vm.greenFlag();},
+    markSaved() {projectDirty=false;},
+    markUnsaved() {projectDirty=false;markChanged();},
     async openControllerSettings(tab = 'controller') {
         try {await connection.request('controller_settings', {tab});}
         catch(error) {showError(error);}
@@ -120,13 +166,15 @@ window.marcStudio = {
     },
     async load(base64) {
         try {
+            ++runGeneration;
             vm.stopAll();
             await connection.stop().catch(()=>{});
             const bytes=Uint8Array.from(atob(base64),character=>character.charCodeAt(0));
-            await vm.loadProject(bytes.buffer);
-            document.querySelector('#example').value='';
-            document.querySelector('#example-hint').textContent='自訂程式：按上方「執行」控制模擬場地中的無人機。';
-            notifyHost({type:'loaded'});
+            projectLoading=true;
+            try {await vm.loadProject(bytes.buffer);} finally {projectLoading=false;}
+            currentExample=''; exampleSelect.value='';
+            hint.textContent='自訂程式 · 按「執行」試飛，按「重置」返回停機坪。';
+            markClean();
         } catch(error) {showError(error);}
     }
 };

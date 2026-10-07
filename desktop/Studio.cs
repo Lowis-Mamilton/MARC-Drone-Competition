@@ -9,6 +9,8 @@ using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Media;
+using System.Windows.Input;
+using System.Windows.Controls.Primitives;
 using System.Windows.Forms.Integration;
 using Microsoft.Web.WebView2.Wpf;
 using Microsoft.Web.WebView2.Core;
@@ -24,6 +26,13 @@ namespace MarcStudio {
         readonly WindowsFormsHost flightHost = new WindowsFormsHost();
         readonly Grid workspace = new Grid();
         readonly TextBlock status = new TextBlock();
+        readonly TextBlock projectName = new TextBlock();
+        readonly TextBlock connectionBadge = new TextBlock();
+        readonly ComboBox layoutPicker = new ComboBox();
+        readonly GridSplitter splitter = new GridSplitter();
+        Button runButton;
+        double splitRatio = 0.54;
+        bool changingLayout;
         readonly List<Button> editorButtons = new List<Button>();
         readonly JavaScriptSerializer json = new JavaScriptSerializer { MaxJsonLength = 64 * 1024 * 1024 };
         Process engine;
@@ -56,50 +65,95 @@ namespace MarcStudio {
         public Studio(string project) {
             root = project;
             Title = "MARC 無人機編程工作室";
-            Width = 1600; Height = 1000; MinWidth = 1200; MinHeight = 760;
+            Width = Math.Min(1560, SystemParameters.WorkArea.Width - 40);
+            Height = Math.Min(960, SystemParameters.WorkArea.Height - 40);
+            MinWidth = 1100; MinHeight = 700;
             WindowStartupLocation = WindowStartupLocation.CenterScreen;
-            Background = Brush("#102039");
-            var shell = new DockPanel { LastChildFill = true };
-            Content = shell;
-            var toolbar = new WrapPanel { Background = Brush("#102039"), Margin = new Thickness(10, 8, 10, 8) };
+            FontFamily = new FontFamily("Microsoft JhengHei UI, Segoe UI");
+            Background = Brush("#101e31");
+            var buttonStyle = new Style(typeof(Button));
+            var template = new ControlTemplate(typeof(Button));
+            var chrome = new FrameworkElementFactory(typeof(Border));
+            chrome.Name = "Chrome";
+            chrome.SetValue(Border.CornerRadiusProperty, new CornerRadius(6));
+            chrome.SetBinding(Border.BackgroundProperty, new System.Windows.Data.Binding("Background") { RelativeSource = new System.Windows.Data.RelativeSource(System.Windows.Data.RelativeSourceMode.TemplatedParent) });
+            var label = new FrameworkElementFactory(typeof(ContentPresenter));
+            label.SetValue(ContentPresenter.HorizontalAlignmentProperty, HorizontalAlignment.Center);
+            label.SetValue(ContentPresenter.VerticalAlignmentProperty, VerticalAlignment.Center);
+            label.SetBinding(ContentPresenter.MarginProperty, new System.Windows.Data.Binding("Padding") { RelativeSource = new System.Windows.Data.RelativeSource(System.Windows.Data.RelativeSourceMode.TemplatedParent) });
+            chrome.AppendChild(label); template.VisualTree = chrome;
+            var hover = new Trigger { Property = IsMouseOverProperty, Value = true };
+            hover.Setters.Add(new Setter(OpacityProperty, 0.83, "Chrome")); template.Triggers.Add(hover);
+            var disabled = new Trigger { Property = IsEnabledProperty, Value = false };
+            disabled.Setters.Add(new Setter(OpacityProperty, 0.4, "Chrome")); template.Triggers.Add(disabled);
+            buttonStyle.Setters.Add(new Setter(TemplateProperty, template));
+            Resources.Add(typeof(Button), buttonStyle);
+            var shell = new DockPanel { LastChildFill = true }; Content = shell;
+            var heading = new DockPanel { Margin = new Thickness(18, 12, 18, 8) };
+            DockPanel.SetDock(heading, Dock.Top); shell.Children.Add(heading);
+            var brand = new TextBlock { Text = "MARC  無人機工作室", Foreground = Brushes.White, FontSize = 20, FontWeight = FontWeights.SemiBold, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, 24, 0) };
+            DockPanel.SetDock(brand, Dock.Left); heading.Children.Add(brand);
+            connectionBadge.Foreground = Brush("#8ba4b9"); connectionBadge.FontSize = 13;
+            connectionBadge.Text = "● 正在啟動"; connectionBadge.VerticalAlignment = VerticalAlignment.Center;
+            DockPanel.SetDock(connectionBadge, Dock.Right); heading.Children.Add(connectionBadge);
+            projectName.Foreground = Brush("#bed0df"); projectName.FontSize = 14;
+            projectName.TextTrimming = TextTrimming.CharacterEllipsis; projectName.VerticalAlignment = VerticalAlignment.Center;
+            heading.Children.Add(projectName);
+            var toolbar = new DockPanel { Margin = new Thickness(14, 0, 14, 10) };
             DockPanel.SetDock(toolbar, Dock.Top); shell.Children.Add(toolbar);
-            toolbar.Children.Add(new TextBlock { Text = "MARC  無人機編程工作室", Foreground = Brushes.White, FontSize = 20, FontWeight = FontWeights.SemiBold, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(6, 0, 20, 0) });
-            AddButton(toolbar, "▶ 執行", async () => await Execute("window.marcVM.greenFlag();"), true, "#167d72");
-            AddButton(toolbar, "■ 停止", async () => await Execute("window.marcVM.stopAll();"), true, "#9b3a4c");
-            AddButton(toolbar, "↺ 重置", async () => await Execute("window.marcStudio.reset();"), true, null);
-            AddButton(toolbar, "開啟 .sb3", async () => await OpenProject(), true, null);
-            AddButton(toolbar, "儲存 .sb3", async () => await Execute("window.marcStudio.save();"), true, null);
-            AddButton(toolbar, "遙控器設定", async () => { SetLayout("split"); await Execute("window.marcStudio.openControllerSettings();"); }, true, null);
-            AddButton(toolbar, "手機遙控", async () => { SetLayout("split"); await Execute("window.marcStudio.openControllerSettings('phone');"); }, true, null);
-            AddButton(toolbar, "積木＋場地", () => { SetLayout("split"); return Task.FromResult(0); }, false, null);
-            AddButton(toolbar, "專心編程", () => { SetLayout("code"); return Task.FromResult(0); }, false, null);
-            AddButton(toolbar, "全場飛行", () => { SetLayout("flight"); return Task.FromResult(0); }, false, null);
-            var footer = new Border { Background = Brush("#102039"), Padding = new Thickness(16, 7, 16, 7) };
-            status.Text = "正在啟動模擬場地與內建積木編輯器…";
-            status.Foreground = Brush("#c1e5ef"); status.FontSize = 13;
+            var viewTools = new StackPanel { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Center };
+            DockPanel.SetDock(viewTools, Dock.Right); toolbar.Children.Add(viewTools);
+            viewTools.Children.Add(new TextBlock { Text = "工作區", Foreground = Brush("#8ba4b9"), VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(8,0,8,0) });
+            layoutPicker.Width = 120; layoutPicker.FontSize = 13; layoutPicker.VerticalContentAlignment = VerticalAlignment.Center; layoutPicker.Height = 32;
+            foreach (var name in new [] { "積木＋場地", "專心編程", "全場飛行" }) layoutPicker.Items.Add(name);
+            layoutPicker.SelectedIndex = 0;
+            layoutPicker.SelectionChanged += (s, e) => { if (!changingLayout) SetLayout(new [] { "split", "code", "flight" }[layoutPicker.SelectedIndex]); };
+            viewTools.Children.Add(layoutPicker);
+            var tools = new WrapPanel(); toolbar.Children.Add(tools);
+            runButton = AddButton(tools, "▶ 執行", async () => await Execute("window.marcStudio.run();"), true, "#117f76", "執行積木程式 · 編程區 F5");
+            runButton.MinWidth = 76;
+            AddButton(tools, "■ 停止", async () => { await Execute("window.marcVM.stopAll();"); SetStatus("已停止程式；飛機保持目前位置。可重置後再次試飛。"); }, true, "#933f52", "停止程式並懸停 · 編程區 Shift+F5");
+            AddButton(tools, "↺ 重置", async () => await Execute("window.marcStudio.reset();"), true, null, "返回停機坪並復原道具，保留積木 · Ctrl+R");
+            AddDivider(tools);
+            AddButton(tools, "開啟", async () => await OpenProject(), true, null, "開啟 .sb3 程式 · Ctrl+O");
+            AddButton(tools, "儲存", async () => await Execute("window.marcStudio.save();"), true, null, "儲存 .sb3 程式 · Ctrl+S");
+            AddDivider(tools);
+            AddButton(tools, "遙控器", async () => { EnsureFlightVisible(); await Execute("window.marcStudio.openControllerSettings();"); }, true, null, "控制來源、搖桿模式與裝置校正");
+            AddButton(tools, "手機遙控", async () => { EnsureFlightVisible(); await Execute("window.marcStudio.openControllerSettings('phone');"); }, true, null, "掃描 QR Code，以手機虛擬搖桿飛行");
+            AddButton(tools, "操作說明", () => { MessageBox.Show(this, "1. 在左側選擇範例，或拖曳無人機積木。\n2. 按「執行」觀察右側飛機；「停止」取消程式並懸停。\n3. 按「重置」返回停機坪，積木保留。\n4. 按「儲存」保留 .sb3 程式。\n\n手機遙控：手機與電腦使用同一 Wi-Fi，掃描 QR Code，關閉設定後將手機橫放。\n\n工作區中央可拖曳調整比例；右上方可切換編程或飛行。\n場地：拖曳旋轉、滾輪縮放、C 切換視角。\n編程區快捷鍵：F5 執行、Shift+F5 停止、Ctrl+R 重置、Ctrl+S 儲存、Ctrl+O 開啟。", "工作室操作說明"); return Task.FromResult(0); }, false, null, "入門步驟與快捷鍵");
+            var footer = new Border { Background = Brush("#0c1727"), Padding = new Thickness(18, 8, 18, 8) };
+            status.Text = "正在準備模擬場地與無人機積木…";
+            status.Foreground = Brush("#a8c0d2"); status.FontSize = 12;
+            status.TextTrimming = TextTrimming.CharacterEllipsis;
             footer.Child = status; DockPanel.SetDock(footer, Dock.Bottom); shell.Children.Add(footer);
-            workspace.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1.1, GridUnitType.Star) });
-            workspace.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(6) });
-            workspace.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+            workspace.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(splitRatio, GridUnitType.Star), MinWidth = 340 });
+            workspace.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(8) });
+            workspace.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1-splitRatio, GridUnitType.Star), MinWidth = 360 });
             shell.Children.Add(workspace);
             workspace.Children.Add(editor); Grid.SetColumn(editor, 0);
-            var splitter = new GridSplitter { Width = 6, HorizontalAlignment = HorizontalAlignment.Stretch, Background = Brush("#31526b"), ResizeBehavior = GridResizeBehavior.PreviousAndNext };
+            splitter.Width = 8; splitter.HorizontalAlignment = HorizontalAlignment.Stretch; splitter.Background = Brush("#20364b"); splitter.ResizeBehavior = GridResizeBehavior.PreviousAndNext;
+            splitter.ToolTip = "拖曳調整編程與場地比例";
+            splitter.DragCompleted += (s,e) => { if (layout == "split") RememberSplit(); };
             workspace.Children.Add(splitter); Grid.SetColumn(splitter, 1);
-            viewport.BackColor = System.Drawing.Color.FromArgb(16, 32, 57);
+            viewport.BackColor = System.Drawing.Color.FromArgb(16, 30, 49);
             flightHost.Child = viewport; workspace.Children.Add(flightHost); Grid.SetColumn(flightHost, 2);
+            viewport.SizeChanged += (s,e) => ResizeGame();
+            PreviewKeyDown += OnShortcut;
+            LoadPreferences(); UpdateTitle();
             Loaded += async (s, e) => { try { await StartEngine(); } catch (Exception ex) { ShowError(ex.Message); } };
             Closing += OnClosing;
-            Closed += (s, e) => { resizeTimer.Stop(); editor.Dispose(); StopEngine(); };
+            Closed += (s, e) => { SavePreferences(); resizeTimer.Stop(); editor.Dispose(); StopEngine(); };
             resizeTimer.Interval = TimeSpan.FromMilliseconds(80);
             resizeTimer.Tick += (s, e) => ResizeGame();
             resizeTimer.Start();
         }
         static SolidColorBrush Brush(string color) { return (SolidColorBrush)new BrushConverter().ConvertFromString(color); }
-        void AddButton(Panel parent, string text, Func<Task> action, bool requiresEditor, string color) {
-            var button = new Button { Content = text, Padding = new Thickness(13, 8, 13, 8), Margin = new Thickness(3), Background = Brush(color ?? "#23435c"), Foreground = Brushes.White, BorderThickness = new Thickness(0), FontSize = 14, IsEnabled = !requiresEditor };
+        Button AddButton(Panel parent, string text, Func<Task> action, bool requiresEditor, string color, string hint) {
+            var button = new Button { Content = text, Padding = new Thickness(12, 9, 12, 9), Margin = new Thickness(3,0,3,0), Background = Brush(color ?? "#243c53"), Foreground = Brushes.White, BorderThickness = new Thickness(0), FontSize = 13, ToolTip = hint, Cursor = Cursors.Hand, IsEnabled = !requiresEditor };
             if (requiresEditor) editorButtons.Add(button);
             button.Click += async (s, e) => { try { await action(); } catch (Exception ex) { ShowError(ex.Message); } };
             parent.Children.Add(button);
+            return button;
         }
         async Task StartEngine() {
             if (engineStarted) return;
@@ -153,7 +207,7 @@ namespace MarcStudio {
                         var result = await editor.ExecuteScriptAsync("Boolean(window.marcReady && window.marcVM && window.marcVM.runtime.targets.length && window.marcConnection && window.marcConnection.connected)");
                         if (result == "true") {
                             ready = true; foreach (var b in editorButtons) b.IsEnabled = true;
-                            status.Text = "已連線  ·  左側拖曳積木，按「執行」控制右側飛機  ·  專案可儲存為 .sb3";
+                            SetStatus("準備完成 · 選擇範例或拖曳積木，按「執行」試飛；可拖曳中央分隔線調整工作區。");
                             return;
                         }
                     }
@@ -173,6 +227,7 @@ namespace MarcStudio {
                 EnumChildWindows(viewport.Handle, findWindow, Zero);
                 if (gameWindow == Zero) EnumWindows(findWindow, Zero);
                 if (gameWindow != Zero) {
+                    resizeTimer.Stop();
                     long style = GetWindowLongPtr(gameWindow, -16).ToInt64();
                     SetWindowLongPtr(gameWindow, -16, new IntPtr((style & ~0x80CF0000L) | 0x46000000L));
                     var oldParent = SetParent(gameWindow, viewport.Handle);
@@ -185,16 +240,62 @@ namespace MarcStudio {
                 MoveWindow(gameWindow, 0, 0, w, h, true); lastWidth = w; lastHeight = h;
             }
         }
+        void AddDivider(Panel parent) { parent.Children.Add(new Border { Width = 1, Height = 22, Background = Brush("#385067"), Margin = new Thickness(8,6,8,6) }); }
+        void EnsureFlightVisible() { if (layout == "code") SetLayout("split"); }
+        void RememberSplit() {
+            var total = workspace.ColumnDefinitions[0].ActualWidth + workspace.ColumnDefinitions[2].ActualWidth;
+            if (total > 0) splitRatio = Math.Max(0.25, Math.Min(0.75, workspace.ColumnDefinitions[0].ActualWidth / total));
+        }
         void SetLayout(string next) {
+            if (layout == "split" && IsLoaded) RememberSplit();
             layout = next;
             editor.Visibility = next == "flight" ? Visibility.Collapsed : Visibility.Visible;
             flightHost.Visibility = next == "code" ? Visibility.Collapsed : Visibility.Visible;
-            workspace.ColumnDefinitions[0].Width = next == "flight" ? new GridLength(0) : new GridLength(next == "code" ? 1 : 1.1, GridUnitType.Star);
-            workspace.ColumnDefinitions[1].Width = new GridLength(next == "split" ? 6 : 0);
-            workspace.ColumnDefinitions[2].Width = next == "code" ? new GridLength(0) : new GridLength(1, GridUnitType.Star);
-            foreach (UIElement child in workspace.Children) if (child is GridSplitter) child.Visibility = next == "split" ? Visibility.Visible : Visibility.Collapsed;
-            lastWidth = -1;
+            workspace.ColumnDefinitions[0].MinWidth = next == "split" ? 340 : 0;
+            workspace.ColumnDefinitions[2].MinWidth = next == "split" ? 360 : 0;
+            workspace.ColumnDefinitions[0].Width = next == "flight" ? new GridLength(0) : new GridLength(next == "code" ? 1 : splitRatio, GridUnitType.Star);
+            workspace.ColumnDefinitions[1].Width = new GridLength(next == "split" ? 8 : 0);
+            workspace.ColumnDefinitions[2].Width = next == "code" ? new GridLength(0) : new GridLength(next == "flight" ? 1 : 1-splitRatio, GridUnitType.Star);
+            splitter.Visibility = next == "split" ? Visibility.Visible : Visibility.Collapsed;
+            changingLayout = true; layoutPicker.SelectedIndex = next == "code" ? 1 : next == "flight" ? 2 : 0; changingLayout = false;
+            lastWidth = -1; Dispatcher.BeginInvoke(new Action(ResizeGame));
         }
+        string PreferencesPath { get { return Path.Combine(root, ".runtime", "studio-ui.json"); } }
+        void LoadPreferences() {
+            try {
+                if (!File.Exists(PreferencesPath)) return;
+                var values = json.Deserialize<Dictionary<string, object>>(File.ReadAllText(PreferencesPath));
+                splitRatio = Math.Max(0.25, Math.Min(0.75, Convert.ToDouble(values["split"])));
+                Width = Math.Max(MinWidth, Math.Min(SystemParameters.WorkArea.Width, Convert.ToDouble(values["width"])));
+                Height = Math.Max(MinHeight, Math.Min(SystemParameters.WorkArea.Height, Convert.ToDouble(values["height"])));
+                var next = Convert.ToString(values["layout"]);
+                SetLayout(next == "code" || next == "flight" ? next : "split");
+                if (Convert.ToBoolean(values["maximized"])) WindowState = WindowState.Maximized;
+            } catch { /* Invalid preferences fall back to the default workspace. */ }
+        }
+        void SavePreferences() {
+            try {
+                if (layout == "split") RememberSplit();
+                var bounds = WindowState == WindowState.Normal ? new Rect(0,0,ActualWidth,ActualHeight) : RestoreBounds;
+                Directory.CreateDirectory(Path.GetDirectoryName(PreferencesPath));
+                File.WriteAllText(PreferencesPath, json.Serialize(new { split = splitRatio, layout, width = bounds.Width, height = bounds.Height, maximized = WindowState == WindowState.Maximized }));
+            } catch { }
+        }
+        async void OnShortcut(object sender, KeyEventArgs e) {
+            if (!ready) return;
+            string script = null;
+            if (e.Key == Key.F5 && Keyboard.Modifiers == ModifierKeys.None) script = "window.marcVM.greenFlag();";
+            if (e.Key == Key.F5 && Keyboard.Modifiers == ModifierKeys.Shift) script = "window.marcVM.stopAll();";
+            if (Keyboard.Modifiers == ModifierKeys.Control) {
+                if (e.Key == Key.S) script = "window.marcStudio.save();";
+                if (e.Key == Key.R) script = "window.marcStudio.reset();";
+                if (e.Key == Key.O) { e.Handled = true; try { await OpenProject(); } catch (Exception error) { ShowError(error.Message); } return; }
+            }
+            if (script == null) return;
+            e.Handled = true;
+            try { await Execute(script); } catch (Exception error) { ShowError(error.Message); }
+        }
+        void SetStatus(string text) { status.Text = text; status.ToolTip = text; status.Foreground = Brush("#a8c0d2"); }
         async Task Execute(string script) {
             if (!ready) throw new Exception("積木編輯器尚未準備完成。");
             await editor.ExecuteScriptAsync(script);
@@ -208,26 +309,45 @@ namespace MarcStudio {
             projectFile = dialog.FileName;
             await Execute("window.marcStudio.load(" + json.Serialize(Convert.ToBase64String(bytes)) + ");");
         }
-        void HandleMessage(object sender, CoreWebView2WebMessageReceivedEventArgs e) {
+        async void HandleMessage(object sender, CoreWebView2WebMessageReceivedEventArgs e) {
             if (!e.Source.StartsWith(origin + "/", StringComparison.Ordinal)) return;
             try {
                 var data = json.Deserialize<Dictionary<string, object>>(e.WebMessageAsJson);
                 var type = Convert.ToString(data["type"]);
-                if (type == "dirty") { dirty = true; UpdateTitle(); }
+                if (type == "shortcut") {
+                    var action = Convert.ToString(data["action"]);
+                    if (ready) {
+                        if (action == "run") await Execute("window.marcStudio.run();");
+                        if (action == "stop") await Execute("window.marcVM.stopAll();");
+                        if (action == "reset") await Execute("window.marcStudio.reset();");
+                        if (action == "save") await Execute("window.marcStudio.save();");
+                        if (action == "open") await OpenProject();
+                    }
+                }
+                if (type == "dirty" && !dirty) { dirty = true; UpdateTitle(); }
+                if (type == "state") {
+                    var connected = Convert.ToBoolean(data["connected"]);
+                    var running = Convert.ToBoolean(data["running"]);
+                    connectionBadge.Text = !connected ? "● 連線中斷" : running ? "● 程式執行中" : "● 已連線 · 可試飛";
+                    connectionBadge.Foreground = Brush(connected ? "#6ed4bc" : "#ffb5b5");
+                    runButton.IsEnabled = ready && connected && !running;
+                    runButton.Content = running ? "▶ 執行中" : "▶ 執行";
+                }
                 if (type == "loaded") { dirty = false; UpdateTitle(); }
-                if (type == "reset") { status.Text = "已重置至停機坪  ·  積木程式保留，可再次按「執行」試飛"; status.Foreground = Brush("#c1e5ef"); }
+                if (type == "reset") SetStatus("已重置至停機坪 · 積木程式保留，可再按「執行」試飛。");
                 if (type == "error") ShowError(Convert.ToString(data["message"]));
                 if (type == "saved") {
                     var dialog = new SaveFileDialog { Filter = "無人機積木程式 (*.sb3)|*.sb3", Title = "儲存無人機程式", FileName = projectFile == null ? "MARC-flight.sb3" : Path.GetFileName(projectFile) };
                     if (projectFile != null) dialog.InitialDirectory = Path.GetDirectoryName(projectFile);
                     if (dialog.ShowDialog(this) != true) { saveThenClose = false; return; }
                     File.WriteAllBytes(dialog.FileName, Convert.FromBase64String(Convert.ToString(data["base64"])));
-                    projectFile = dialog.FileName; dirty = false; UpdateTitle(); status.Text = "已儲存：" + projectFile;
+                    await editor.ExecuteScriptAsync("window.marcStudio.markSaved();");
+                    projectFile = dialog.FileName; dirty = false; UpdateTitle(); SetStatus("已儲存：" + projectFile);
                     if (saveThenClose) { closing = true; Close(); }
                 }
             } catch (Exception ex) { saveThenClose = false; ShowError(ex.Message); }
         }
-        void UpdateTitle() { Title = (dirty ? "● " : "") + (projectFile == null ? "未命名程式" : Path.GetFileName(projectFile)) + " — MARC 無人機編程工作室"; }
+        void UpdateTitle() { var name = projectFile == null ? "未命名程式" : Path.GetFileName(projectFile); projectName.Text = name + (dirty ? "  ·  尚未儲存" : ""); Title = (dirty ? "● " : "") + name + " — MARC 無人機編程工作室"; }
         async void OnClosing(object sender, System.ComponentModel.CancelEventArgs e) {
             if (closing) return;
             if (dirty && ready) {
@@ -238,7 +358,7 @@ namespace MarcStudio {
             closing = true;
         }
         void StopEngine() { try { if (engine != null && !engine.HasExited) engine.Kill(); } catch {} }
-        void ShowError(string message) { status.Text = message; status.Foreground = Brush("#ffc7ca"); }
+        void ShowError(string message) { status.Text = message; status.ToolTip = message; status.Foreground = Brush("#ffc7ca"); }
         static string Quote(string value) { return "\"" + value.Replace("\"", "\\\"") + "\""; }
     }
 }

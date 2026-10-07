@@ -42,6 +42,7 @@ var show_trace := false
 var trace_clock := 0.0
 var camera_drag_hint: Label
 var studio_embedded := false
+var hud_clock := 0.0
 var side_panel: PanelContainer
 
 func _ready() -> void:
@@ -49,7 +50,7 @@ func _ready() -> void:
 	if studio_embedded:
 		get_window().content_scale_mode = Window.CONTENT_SCALE_MODE_DISABLED
 		get_window().content_scale_size = Vector2i.ZERO
-		orbit_distance = 8.5
+		orbit_distance = 6.6
 	arena = MARCArena.new()
 	add_child(arena)
 	drone = MARCDrone.new()
@@ -108,7 +109,7 @@ func _build_ui() -> void:
 	var font := SystemFont.new()
 	font.font_names = PackedStringArray(["Microsoft JhengHei UI", "Microsoft JhengHei", "Noto Sans CJK TC"])
 	theme.default_font = font
-	theme.default_font_size = 16
+	theme.default_font_size = 14 if studio_embedded else 16
 	for kind in ["Button", "OptionButton"]:
 		theme.set_stylebox("normal", kind, _style(Color("20384e")))
 		theme.set_stylebox("hover", kind, _style(Color("2e5570")))
@@ -139,6 +140,8 @@ func _build_ui() -> void:
 	var content := VBoxContainer.new()
 	content.add_theme_constant_override("separation", 10)
 	side.add_child(content)
+	if studio_embedded:
+		_button(content, "關閉任務／設定 ×", func(): side.hide())
 	group_option = OptionButton.new()
 	group_option.add_item("程式控制組  ·  300 分")
 	group_option.add_item("遙控＋程式組  ·  200 分")
@@ -164,7 +167,7 @@ func _build_ui() -> void:
 	content.add_child(tabs)
 	var task_tab := _tab("任務")
 	tasks_label = _rich(task_tab, 300)
-	var scratch_tab := _tab("Scratch")
+	var scratch_tab := _tab("編程")
 	_button(scratch_tab, "內建積木編程" if studio_embedded else "開啟編程工作室", _open_scratch)
 	connection_label = _label("Scratch 尚未連線", 14)
 	connection_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
@@ -239,12 +242,14 @@ func _build_ui() -> void:
 	status_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	footer_content.add_child(status_label)
 	var views := HBoxContainer.new()
+	views.add_theme_constant_override("separation", 5)
 	views.position = Vector2(18 if studio_embedded else 422,84 if studio_embedded else 111)
 	root.add_child(views)
 	if studio_embedded:
 		_button(views, "任務／設定", func(): side.visible = not side.visible)
 	for item in [["選手視角",0],["跟隨",1],["FPV",2],["俯視",3]]:
-		_button(views, item[0], func(): camera_mode = int(item[1]))
+		var view_button := _button(views, item[0], func(): camera_mode = int(item[1]))
+		view_button.tooltip_text = "切換至%s；也可按 C 循環切換" % item[0]
 	notice_label = _label("", 16)
 	notice_label.position = Vector2(18 if studio_embedded else 430,132 if studio_embedded else 170)
 	notice_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
@@ -411,22 +416,11 @@ func _open_scratch() -> void:
 
 func _process(delta: float) -> void:
 	_update_camera(delta)
-	var p := drone.pose()
-	var sensed := arena.sensor_at(drone.global_position)
-	pose_label.text = "X %5.1f   Y %5.1f   底部高度 %5.1f cm     速度 %4.1f cm/s     感測 %s     LED %s" % [p.x,p.y,p.h,p.speed,_color_name(sensed.color),_color_name(drone.led)]
-	var phase := {"practice":"自由練習","prepare":"準備／檢查","active":"比賽進行","transition":"階段交接","finished":"比賽結束"}
-	state_label.text = phase.get(competition.state, "") + (" · 階段 %d" % (competition.stage + 1) if competition.group == "hybrid" else "")
-	timer_label.text = "--:--" if competition.state in ["practice","finished"] else "%02d:%04.1f" % [int(competition.remaining) / 60,fmod(competition.remaining,60)]
-	status_label.text = "控制：%s  ·  %s  ·  滑鼠拖曳旋轉 / 滾輪縮放 / C 切換視角  ·  %s" % [{"keyboard":"鍵盤","gamepad":"手把","phone":"手機"}.get(active_source,"遙控器"),"Scratch 程式執行中" if bridge.running else "定位懸停", "計分暫停：須完成重置" if competition.suppressed else "道具位置依規則座標表"]
-	connection_label.text = "Scratch 已連線" if bridge.controller_peer != 0 else "Scratch 尚未連線"
-	begin_button.visible = competition.state == "prepare"
-	start_button.disabled = competition.state in ["prepare","active","transition"]
-	reset_button.disabled = not competition.reset_allowed()
-	flight_button.disabled = not competition.can_manual() or bridge.running
 	notice_seconds = maxf(0, notice_seconds - delta)
-	notice_label.visible = notice_seconds > 0
-	var pad_id := controller_settings.selected_device()
-	controller_monitor.text = "遙控器：" + (Input.get_joy_name(pad_id) if pad_id >= 0 else "未連接")
+	hud_clock += delta
+	if hud_clock >= 0.1:
+		hud_clock = 0.0
+		_update_hud()
 	trace_clock += delta
 	if show_trace and competition.state == "practice" and trace_clock > 0.12:
 		trace_clock = 0
@@ -437,6 +431,24 @@ func _process(delta: float) -> void:
 			trace.surface_begin(Mesh.PRIMITIVE_LINE_STRIP)
 			for point in trace_points: trace.surface_add_vertex(point)
 			trace.surface_end()
+
+func _update_hud() -> void:
+	var p := drone.pose()
+	var sensed := arena.sensor_at(drone.global_position)
+	pose_label.text = ("X %.1f · Y %.1f · 高 %.1f cm · %.1f cm/s\n感測 %s · LED %s" if studio_embedded else "X %5.1f   Y %5.1f   底部高度 %5.1f cm     速度 %4.1f cm/s     感測 %s     LED %s") % [p.x,p.y,p.h,p.speed,_color_name(sensed.color),_color_name(drone.led)]
+	var phase := {"practice":"自由練習","prepare":"準備／檢查","active":"比賽進行","transition":"階段交接","finished":"比賽結束"}
+	state_label.text = phase.get(competition.state, "") + (" · 階段 %d" % (competition.stage + 1) if competition.group == "hybrid" else "")
+	timer_label.text = "--:--" if competition.state in ["practice","finished"] else "%02d:%04.1f" % [int(competition.remaining) / 60,fmod(competition.remaining,60)]
+	status_label.text = "%s控制 · %s
+拖曳旋轉 · 滾輪縮放 · C 視角 · %s" % [{"keyboard":"鍵盤","gamepad":"手把","phone":"手機"}.get(active_source.split(":")[0],"遙控器"),"Scratch 程式執行中" if bridge.running else "定位懸停", "須重置" if competition.suppressed else ""]
+	connection_label.text = "Scratch 已連線" if bridge.controller_peer != 0 else "Scratch 尚未連線"
+	begin_button.visible = competition.state == "prepare"
+	start_button.disabled = competition.state in ["prepare","active","transition"]
+	reset_button.disabled = not competition.reset_allowed()
+	flight_button.disabled = not competition.can_manual() or bridge.running
+	notice_label.visible = notice_seconds > 0
+	var pad_id := controller_settings.selected_device()
+	controller_monitor.text = "遙控器：" + (Input.get_joy_name(pad_id) if pad_id >= 0 else "未連接")
 
 func _physics_process(delta: float) -> void:
 	if not is_instance_valid(drone): return

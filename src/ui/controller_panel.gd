@@ -32,6 +32,7 @@ var capturing := false
 var capture_device := -1
 var syncing := false
 var device_signature := ""
+var monitor_clock := 0.0
 var setup_tabs: TabContainer
 var phone_url: LineEdit
 var phone_qr: TextureRect
@@ -340,8 +341,12 @@ func reset_calibration() -> void:
 	gamepad.reset_calibration(settings.selected_device())
 	calibration_status.text = "已還原此裝置校正為 −1／0／+1。"
 
-func _process(_delta: float) -> void:
-	if not is_instance_valid(settings) or not is_instance_valid(source_option): return
+func _process(delta: float) -> void:
+	if not visible or not is_instance_valid(settings) or not is_instance_valid(source_option): return
+	if capturing: gamepad.capture_range_sample(capture_device)
+	monitor_clock += delta
+	if monitor_clock < 0.05: return
+	monitor_clock = 0.0
 	var pads := Input.get_connected_joypads()
 	var signature := str(pads)
 	for id in pads: signature += Input.get_joy_guid(id) + Input.get_joy_name(id)
@@ -349,7 +354,6 @@ func _process(_delta: float) -> void:
 		device_signature = signature
 		if capturing and capture_device not in pads: cancel_calibration()
 		refresh_devices()
-	if not visible: return
 	var id := settings.selected_device()
 	var locked := drone.armed or bridge.running
 	connection_status.text = "先降落並停止積木程式，才能修改設定。" if locked else ("校正中，飛行輸入已暫停。" if capturing else "設定自動儲存；USB／藍牙連線後會自動出現在裝置清單。")
@@ -364,7 +368,6 @@ func _process(_delta: float) -> void:
 		output_status.text = "尚未偵測到遙控器。請以 USB／藍牙連線。"
 		for axis in axis_labels: axis_labels[axis].text = AXIS_NAMES[axis] + "：—"
 		return
-	if capturing: gamepad.capture_range_sample(capture_device)
 	var raw := gamepad.raw_axes(id)
 	var calibrated := gamepad.calibrated_axes(id, throttle_axis())
 	preview.set_sticks(raw, calibrated, true)

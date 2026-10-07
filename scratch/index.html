@@ -4,7 +4,11 @@
 <style>
 html,body{height:100%;margin:0;font:14px system-ui,"Microsoft JhengHei",sans-serif;background:#102039;color:#fff}
 *{box-sizing:border-box}
-header{height:48px;display:flex;align-items:center;gap:10px;padding:6px 12px;background:#102039}
+html,body{overflow:hidden}
+[class*="gui_body-wrapper"]{height:100%!important;min-height:0!important}
+[class*="gui_tabs"]{min-width:0!important}
+[class*="gui_tab-panel"]{min-width:0!important}
+header{min-height:48px;display:flex;align-items:center;gap:10px;padding:6px 12px;background:#102039}
 header strong{font-size:17px;white-space:nowrap}#status{flex:1;font-size:12px;color:#b9ddea;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
 button,select{border:1px solid #4c7c91;border-radius:6px;background:#18364c;color:white;padding:7px;cursor:pointer}
 #run{background:#167d72}#emergency{background:#96394c}
@@ -18,10 +22,21 @@ button,select{border:1px solid #4c7c91;border-radius:6px;background:#18364c;colo
 [class*="gui_editor-wrapper"]{flex:1;min-width:0}
 [class*="blocks_blocks"]{min-width:0!important}
 html.embedded header strong,html.embedded #run,html.embedded #emergency,html.embedded #reconnect,html.embedded #reset{display:none}
-html.embedded #status{font-size:11px}
-html.embedded header{gap:8px}
+html.embedded header{height:48px;gap:10px;background:#f5f8fc;color:#20364b;border-bottom:1px solid #d9e3ed;padding:8px 14px}
+html.embedded header::before{content:'積木編程';font-size:14px;font-weight:700;white-space:nowrap}
+html.embedded #status{font-size:11px;color:#27776b}
+html.embedded #status.offline{color:#a23e50}
+html.embedded select{max-width:190px;min-width:130px;border-color:#cfdae4;background:white;color:#20364b;padding:6px 8px;font:inherit;font-size:12px;border-radius:6px}
+html.embedded #example-hint{background:#eaf1f8;color:#4c6277;border-bottom-color:#d9e3ed;height:42px;line-height:1.45;padding:7px 14px;font-size:12px}
+html.embedded #app{height:calc(100% - 90px)}
+html.embedded #boot{inset:90px 0 0;background:#eef3f8;color:#355367}
+html.embedded #reconnect:not([hidden]){display:inline-block;background:#a23e50;color:white;font-size:11px;padding:5px}
+button[hidden]{display:none!important}
+button:focus-visible,select:focus-visible{outline:2px solid #45b5bd;outline-offset:2px}
+@media(max-width:540px){html.embedded #status{display:none}html.embedded select{max-width:180px;margin-left:auto}html.embedded #example-hint{font-size:11px}}
+@media(prefers-reduced-motion:no-preference){#boot::before{content:'';width:18px;height:18px;border:2px solid #afc7d8;border-top-color:#167a91;border-radius:50%;margin-right:10px;animation:spin 1s linear infinite}@keyframes spin{to{transform:rotate(360deg)}}}
 </style></head><body>
-<header><strong>無人機積木編程</strong><span id="status">正在連接模擬場地…</span><select id="example" aria-label="簡單範例"><option value="">我的程式</option><optgroup label="入門範例"><option value="takeoff">① 起飛與降落</option><option value="forward">② 前進再返航</option><option value="led">③ LED 變色</option></optgroup><optgroup label="任務練習"><option value="color">讀色救援</option><option value="shortcut">穿越捷徑</option></optgroup></select><button id="run">▶ 執行</button><button id="emergency">■ 停止</button><button id="reset" title="停止程式，飛機回停機坪並復原場地道具；保留積木程式">↺ 重置</button><button id="reconnect">重新連線</button></header>
+<header><strong>無人機積木編程</strong><span id="status">正在連接模擬場地…</span><select id="example" aria-label="載入飛行範例" title="選擇範例開始練習；有未儲存修改時會先提醒"><option value="">我的程式</option><optgroup label="入門範例"><option value="takeoff">① 起飛與降落</option><option value="forward">② 前進再返航</option><option value="led">③ LED 變色</option></optgroup><optgroup label="任務練習"><option value="color">讀色救援</option><option value="shortcut">穿越捷徑</option></optgroup></select><button id="run">▶ 執行</button><button id="emergency">■ 停止</button><button id="reset" title="停止程式，飛機回停機坪並復原場地道具；保留積木程式">↺ 重置</button><button id="reconnect">重新連線</button></header>
 <div id="example-hint" aria-live="polite">載入簡單範例中…</div>
 <div id="app"></div><div id="boot">正在準備無人機積木與起降範例…</div><div id="error" role="alert"></div>
 <script src="dependencies.js"></script><script src="editor/scratch-gui.js"></script><script type="module" src="editor.mjs"></script>
